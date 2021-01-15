@@ -1,0 +1,215 @@
+---
+title: "Group project"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+
+
+setwd("/Users/zhanfengzhao/Downloads/2020Spring/TSA/project")
+df=read.csv("export_dataframe.csv")
+
+library(fpp2)
+library(forecast)
+library(ggplot2)
+library(urca)
+
+```
+
+## Define questions
+
+1. Predict weekly sales
+2. Which factors have biggest impact on weekly sales? 
+
+## Data description
+
+| Variable Description |
+|------|
+|Temperature|
+|Fuel price|
+|CPI| 
+|Unemployment rate|
+|IsHoliday|
+
+```{r weekly_sales}
+head(df)
+summary(df)
+dim(df)
+
+```
+
+### Data cleaning
+
+Python steps
+
+### Data limitation
+
+1. Small sample
+2. Select one store to perform the analysis
+
+
+```{r weekly_sales1}
+store1<-subset(df, Store==1)
+dim(store1)
+```
+## Time plots
+```{r weekly_sales2, echo=FALSE}
+
+y = ts(data=store1$Weekly_Sales/1000000, frequency = 52, start = c(2010,2),end=c(2012,11))
+
+autoplot(y)+
+  ggtitle("Weekly Sales 2010/2 - 2012/11")+
+  xlab("Year")+ylab("$ millions")
+
+
+```
+
+```{r weekly_sales3, echo=FALSE}
+
+ggAcf(y)
+
+
+```
+
+```{r weekly_sales3, echo=FALSE}
+
+ggseasonplot(y, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("$ million") +
+  ggtitle("Seasonal plot: Weekly Sales 2010/2 - 2012/11")
+
+
+```
+
+## Time series pattern
+
+Obvious seasonality. r1 and r52 are higher than for the other lags, this is due to the seasonal pattern in the data.
+
+## Forecast analysis
+
+### Simple forecast methods
+
+```{r weekly_sales5, echo=FALSE}
+
+## I removed naive method since there is an obvious seasonality pattern. 
+
+
+autoplot(y) +
+  autolayer(meanf(y, h=52),
+    series="Mean", PI=FALSE) +
+  autolayer(snaive(y, h=52),
+    series="Seasonal naïve", PI=FALSE) +
+  autolayer(rwf(y, h=52, drift=TRUE), 
+    series="Drift", PI=FALSE)+   
+  ggtitle("Forecasts for weekly_sales") +
+  xlab("Year") + ylab("$ Millions") +
+  guides(colour=guide_legend(title="Forecast"))
+
+
+```
+
+Seasonal naive method has the lowest RMSE, it is the best fit model under simple forecast methods.
+
+```{r weekly_sales6, echo=FALSE}
+
+fit1 <- meanf(y, h=52)
+fit2 <- snaive(y, h=52)
+fit3 <- rwf(y, h=52, drift=TRUE)
+accuracy(fit1)
+accuracy(fit2)
+accuracy(fit3)
+
+```
+
+## ETS
+
+decompose time series
+
+```{r weekly_sales7, echo=FALSE}
+
+mstl(y) %>% autoplot
+
+```
+
+
+
+### ETS model with seasonality
+
+```{r weekly_sales9, echo=FALSE}
+
+
+fit4=stlf(y,method="ets",allow.multiplicative.trend=TRUE)
+
+summary(fit4)
+autoplot(y) +
+  autolayer(forecast(stlf(y,method="ets",allow.multiplicative.trend=TRUE), h=52), PI=FALSE, series="ETS")
+
+accuracy(fit4)
+
+```
+
+## SARIMA 
+
+Step 1 - check stationarity
+If a time series has a trend or seasonality component, it must be made stationary before we can use ARIMA to forecast. 
+
+Step 2 - difference
+If the time series is not stationary, it needs to be stationarized through differencing. According to the summary, we cannot reject the null hypothersis at 5% significant level. Therefore the data is stationary. 
+
+```{r weekly_sales10, echo=FALSE}
+
+y %>% diff(lag=52) %>% ggtsdisplay()
+
+fit5<-auto.arima(y, stepwise=FALSE,approximation=FALSE)
+summary(fit5)
+
+autoplot(y) +
+  autolayer(forecast(fit5, h=52), PI=FALSE, series="Seasonal Arima")
+
+
+
+
+```
+
+## Linear Rregression models
+
+### Correlations between varivales
+
+```{r weekly_sales11, echo=FALSE}
+
+install.packages('corrr')
+library(corrr)
+store1$IsHoliday<- as.numeric(store1$IsHoliday) - 1
+correlate(store1[c(3:8)])
+
+```
+
+
+```{r weekly_sales11, echo=FALSE}
+
+df3<- subset(store1,
+select=c(Temperature, Fuel_Price, CPI, Unemployment, IsHoliday, Weekly_Sales))
+
+df3%>%
+  as.data.frame %>%
+  GGally::ggpairs()
+
+```
+
+
+## Dynamic regression 
+```{r weekly_sales13, echo=FALSE}
+store1<-subset(df, Store==1)
+store1$IsHoliday<- as.numeric(store1$IsHoliday) - 1
+y2 = ts(data=store1, frequency = 52, start = c(2010,2),end=c(2012,10))
+fit1 <- Arima(y2[,"Weekly_Sales"]/1000000, xreg = y2[,c("Temperature","Fuel_Price","CPI","Unemployment")],
+                   order = c(0,0,0),seasonal = c(0,1,0))
+summary(fit1)
+```
+```{r}
+checkresiduals(fit1)
+```
+
+
